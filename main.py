@@ -30,7 +30,11 @@ LIMIT = 200
 
 
 def guard(line):
-    """Refuse anything the gate would refuse, with a plain reason."""
+    """Refuse anything the gate would refuse, with a plain reason.
+
+    Returns the exact UTF-8 payload to write, so the bytes that were
+    checked are the bytes that ship — nothing re-encoded in between.
+    """
     problems = []
     if not isinstance(line, str):
         problems.append("line is not text")
@@ -38,13 +42,14 @@ def guard(line):
         problems.append("line is blank")
     elif len(line) > LIMIT:
         problems.append("line is %d chars, over the %d limit" % (len(line), LIMIT))
-    else:
-        try:
-            line.encode("utf-8")
-        except UnicodeEncodeError:
-            problems.append("line is not valid UTF-8")
+    elif "\n" in line or "\r" in line:
+        problems.append("line must stay one line")
     if problems:
         raise ValueError("; ".join(problems))
+    try:
+        return line.encode("utf-8")
+    except UnicodeEncodeError:
+        raise ValueError("line is not valid UTF-8")
 
 
 def resolve_outdir():
@@ -56,13 +61,13 @@ def resolve_outdir():
 
 
 def main():
-    guard(LINE)
+    payload = guard(LINE)
     target = resolve_outdir() / "entry.txt"
-    payload = LINE.encode("utf-8")
     target.write_bytes(payload)
-    if target.read_bytes() != payload:
+    written = target.read_bytes()
+    if written != payload or len(written) != len(payload):
         raise AssertionError("entry.txt did not round-trip")
-    print("wrote %d chars to %s" % (len(LINE), target))
+    print("wrote %d chars (%d bytes) to %s" % (len(LINE), len(payload), target))
     return 0
 
 
